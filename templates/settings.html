@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Settings — ListBridge{% endblock %}
+
+{% block content %}
+<h4 class="mb-4"><i class="bi bi-gear"></i> Settings</h4>
+
+<form method="post">
+  <div class="row g-4">
+
+    <!-- Plex -->
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-server text-warning"></i> Plex</span>
+          <span id="plex-status" class="badge {% if plex_ok %}bg-success{% else %}bg-danger{% endif %}">
+            {% if plex_ok %}Connected{% else %}Offline{% endif %}
+          </span>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">Plex URL</label>
+            <input type="url" class="form-control" name="plex_url"
+                   value="{{ s.get('plex_url','') }}" placeholder="http://localhost:32400">
+            <div class="form-text">Your Plex server URL (include port).</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Plex Token <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/" target="_blank" class="text-muted small">(how to find)</a></label>
+            <input type="password" class="form-control" name="plex_token"
+                   value="{{ s.get('plex_token','') }}" placeholder="xxxxxxxxxxxxxxxxxxxx">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Music Library Name</label>
+            <input type="text" class="form-control" name="plex_music_library"
+                   value="{{ s.get('plex_music_library','Music') }}">
+            <div class="form-text">Exact name of your Plex music library section.</div>
+          </div>
+          <hr>
+          <p class="small text-muted">
+            <strong>Path mapping</strong> — only needed if Plex and ListBridge see your music under different paths
+            (e.g. Docker volume mounts).
+          </p>
+          <div class="mb-3">
+            <label class="form-label">Plex path prefix <small class="text-muted">(Plex server path)</small></label>
+            <input type="text" class="form-control" name="plex_path_prefix"
+                   value="{{ s.get('plex_path_prefix','') }}" placeholder="/data/music">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Local path prefix <small class="text-muted">(m3u / ListBridge path)</small></label>
+            <input type="text" class="form-control" name="local_path_prefix"
+                   value="{{ s.get('local_path_prefix','') }}" placeholder="/mnt/music">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navidrome -->
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-music-player text-info"></i> Navidrome</span>
+          <span class="badge {% if navi_ok %}bg-success{% else %}bg-secondary{% endif %}">
+            {% if navi_ok %}Connected{% else %}Offline{% endif %}
+          </span>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">Navidrome URL</label>
+            <input type="url" class="form-control" name="navidrome_url"
+                   value="{{ s.get('navidrome_url','') }}" placeholder="http://localhost:4533">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Username</label>
+            <input type="text" class="form-control" name="navidrome_user"
+                   value="{{ s.get('navidrome_user','') }}">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Password</label>
+            <input type="password" class="form-control" name="navidrome_password"
+                   value="{{ s.get('navidrome_password','') }}">
+          </div>
+          <div class="form-text text-muted mt-2">
+            Uses the Subsonic-compatible API. Works with any Subsonic server.
+          </div>
+        </div>
+      </div>
+
+      <!-- General -->
+      <div class="card mt-4">
+        <div class="card-header"><i class="bi bi-sliders"></i> General</div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">Default M3U directory</label>
+            <input type="text" class="form-control" name="m3u_directory"
+                   value="{{ s.get('m3u_directory','') }}" placeholder="/path/to/playlists">
+            <div class="form-text">ListBridge will watch this directory for .m3u files.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Plex poll interval (seconds)</label>
+            <input type="number" class="form-control" name="plex_poll_interval"
+                   value="{{ s.get('plex_poll_interval','60') }}" min="10">
+            <div class="form-text">How often to check Plex for manual playlist changes.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="mt-4">
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-save"></i> Save Settings
+    </button>
+    <a href="{{ url_for('index') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+  </div>
+</form>
+{% endblock %}

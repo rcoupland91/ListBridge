@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  listbridge:
+    build: .
+    container_name: listbridge
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount your playlist directory (adjust path to your setup)
+      - /path/to/your/playlists:/playlists
+      # Persist the SQLite database
+      - listbridge_data:/app/data
+    environment:
+      - SECRET_KEY=change-me-please
+      - PLEX_URL=http://plex:32400          # or your Plex host
+      - PLEX_TOKEN=                         # your Plex token
+      - PLEX_MUSIC_LIBRARY=Music
+      - NAVIDROME_URL=http://navidrome:4533
+      - NAVIDROME_USER=admin
+      - NAVIDROME_PASSWORD=
+      - M3U_DIRECTORY=/playlists
+      - PLEX_POLL_INTERVAL=60
+      - PORT=5000
+      # Path mapping if Plex and ListBridge see music differently
+      # - PLEX_PATH_PREFIX=/data/music
+      # - LOCAL_PATH_PREFIX=/playlists/music
+
+volumes:
+  listbridge_data:
