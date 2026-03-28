@@ -350,6 +350,61 @@ def api_status():
     })
 
 
+@app.route("/api/discover")
+def api_discover():
+    """
+    Recursively scan M3U_DIRECTORY (or a supplied path) for .m3u / .m3u8 files.
+    Returns a list of discovered files annotated with whether they are already
+    registered in the database.
+    """
+    scan_root = request.args.get("path") or db.get_setting("m3u_directory", "")
+    if not scan_root:
+        return jsonify({"error": "No M3U directory configured. Set it in Settings first."}), 400
+    if not os.path.isdir(scan_root):
+        return jsonify({"error": f"Directory not found: {scan_root}"}), 400
+
+    registered = {pl["m3u_path"] for pl in db.get_playlists() if pl["m3u_path"]}
+    found = []
+    for dirpath, _dirs, files in os.walk(scan_root):
+        for fname in sorted(files):
+            if fname.lower().endswith((".m3u", ".m3u8")):
+                full = os.path.join(dirpath, fname)
+                found.append({
+                    "path": full,
+                    "name": os.path.splitext(fname)[0],
+                    "registered": full in registered,
+                    "rel": os.path.relpath(full, scan_root),
+                })
+    found.sort(key=lambda x: x["rel"].lower())
+    return jsonify(found)
+
+
+@app.route("/api/discover/import", methods=["POST"])
+def api_discover_import():
+    """Bulk-register a list of discovered m3u paths."""
+    paths = request.json.get("paths", [])
+    if not paths:
+        return jsonify({"error": "No paths provided"}), 400
+
+    added = []
+    skipped = []
+    for path in paths:
+        if not os.path.isfile(path):
+            skipped.append({"path": path, "reason": "file not found"})
+            continue
+        name = os.path.splitext(os.path.basename(path))[0]
+        existing = db.get_playlist_by_m3u(path)
+        if existing:
+            skipped.append({"path": path, "reason": "already registered"})
+            continue
+        pl_id = db.upsert_playlist(name=name, m3u_path=path)
+        if _watcher:
+            _watcher.watch(os.path.dirname(path))
+        added.append({"path": path, "name": name, "id": pl_id})
+
+    return jsonify({"added": added, "skipped": skipped})
+
+
 @app.route("/api/plex/playlists")
 def api_plex_playlists():
     if not _plex or not _plex.connected:
