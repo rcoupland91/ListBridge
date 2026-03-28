@@ -4,9 +4,14 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h4 class="mb-0"><i class="bi bi-collection-play"></i> Playlists</h4>
-  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
-    <i class="bi bi-plus-lg"></i> Add Playlist
-  </button>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#discoverModal">
+      <i class="bi bi-search"></i> Discover M3Us
+    </button>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
+      <i class="bi bi-plus-lg"></i> Add Playlist
+    </button>
+  </div>
 </div>
 
 {% if playlists %}
@@ -235,6 +240,61 @@
 </div>
 
 
+<!-- ── Discover Modal ── -->
+<div class="modal fade modal-xl" id="discoverModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-search"></i> Discover M3U Files</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex gap-2 mb-3 align-items-center">
+          <input type="text" id="discover-path" class="form-control"
+                 placeholder="Directory to scan (leave blank to use configured M3U directory)">
+          <button class="btn btn-outline-primary text-nowrap" onclick="runDiscover()">
+            <i class="bi bi-search"></i> Scan
+          </button>
+        </div>
+        <div id="discover-results" class="d-none">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span id="discover-summary" class="small text-muted"></span>
+            <div class="d-flex gap-2">
+              <button class="btn btn-xs btn-outline-secondary" onclick="selectAllDiscover(true)">Select all new</button>
+              <button class="btn btn-xs btn-outline-secondary" onclick="selectAllDiscover(false)">Deselect all</button>
+              <button class="btn btn-sm btn-primary" onclick="importSelected()">
+                <i class="bi bi-download"></i> Import Selected
+              </button>
+            </div>
+          </div>
+          <div style="max-height:55vh;overflow-y:auto;">
+            <table class="table table-dark table-sm table-hover small mb-0">
+              <thead>
+                <tr>
+                  <th style="width:32px"></th>
+                  <th>Playlist name</th>
+                  <th>Path</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="discover-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="discover-empty" class="text-center text-muted py-4 d-none">
+          <i class="bi bi-folder2-open fs-2 d-block mb-2"></i>
+          No .m3u or .m3u8 files found in that directory.
+        </div>
+        <div id="discover-loading" class="text-center py-4 d-none">
+          <span class="spinner-border text-primary"></span>
+          <div class="mt-2 text-muted small">Scanning…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 {% endblock %}
 
 {% block scripts %}
@@ -284,6 +344,86 @@ function viewTracks(id, name) {
         </tr>
       `).join('');
     });
+}
+
+// ── Discover M3Us ─────────────────────────────────────────────────────────────
+
+let _discoverData = [];
+
+function runDiscover() {
+  const path = document.getElementById('discover-path').value.trim();
+  const url = '/api/discover' + (path ? `?path=${encodeURIComponent(path)}` : '');
+
+  document.getElementById('discover-results').classList.add('d-none');
+  document.getElementById('discover-empty').classList.add('d-none');
+  document.getElementById('discover-loading').classList.remove('d-none');
+
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('discover-loading').classList.add('d-none');
+      if (data.error) { alert(data.error); return; }
+      _discoverData = data;
+
+      if (!data.length) {
+        document.getElementById('discover-empty').classList.remove('d-none');
+        return;
+      }
+
+      const newCount = data.filter(f => !f.registered).length;
+      document.getElementById('discover-summary').textContent =
+        `Found ${data.length} file${data.length !== 1 ? 's' : ''} — ${newCount} not yet registered`;
+
+      const tbody = document.getElementById('discover-tbody');
+      tbody.innerHTML = data.map((f, i) => `
+        <tr class="${f.registered ? 'opacity-50' : ''}">
+          <td>
+            <input type="checkbox" class="form-check-input discover-check"
+                   data-idx="${i}" ${!f.registered ? 'checked' : ''} ${f.registered ? 'disabled' : ''}>
+          </td>
+          <td>${escHtml(f.name)}</td>
+          <td class="text-muted text-truncate" style="max-width:320px" title="${escHtml(f.path)}">${escHtml(f.rel)}</td>
+          <td>
+            ${f.registered
+              ? '<span class="badge bg-secondary">Already registered</span>'
+              : '<span class="badge bg-success">New</span>'}
+          </td>
+        </tr>
+      `).join('');
+
+      document.getElementById('discover-results').classList.remove('d-none');
+    })
+    .catch(e => {
+      document.getElementById('discover-loading').classList.add('d-none');
+      alert('Scan failed: ' + e);
+    });
+}
+
+function selectAllDiscover(state) {
+  document.querySelectorAll('.discover-check:not(:disabled)').forEach(cb => cb.checked = state);
+}
+
+function importSelected() {
+  const checked = [...document.querySelectorAll('.discover-check:checked')];
+  if (!checked.length) { alert('No files selected.'); return; }
+
+  const paths = checked.map(cb => _discoverData[parseInt(cb.dataset.idx)].path);
+
+  fetch('/api/discover/import', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({paths}),
+  })
+  .then(r => r.json())
+  .then(result => {
+    const added = result.added?.length || 0;
+    alert(`Imported ${added} playlist${added !== 1 ? 's' : ''}. Reload to see them.`);
+    if (added > 0) location.reload();
+  });
+}
+
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
 {% endblock %}
