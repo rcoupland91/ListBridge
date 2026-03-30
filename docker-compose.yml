@@ -6,7 +6,7 @@ services:
     container_name: listbridge
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "5001:5000"
     volumes:
       # Mount music library at the same path Navidrome uses so m3u paths resolve correctly
       - /mnt/user/Media/Music:/music
@@ -14,19 +14,17 @@ services:
       - listbridge_data:/app/data
     environment:
       - SECRET_KEY=change-me-please
-      - PLEX_URL=http://plex:32400
-      - PLEX_TOKEN=                        # your Plex token
-      - PLEX_MUSIC_LIBRARY=Music
-      - NAVIDROME_URL=http://navidrome:4533
-      - NAVIDROME_USER=admin
-      - NAVIDROME_PASSWORD=
+      - PLEX_URL
+      - PLEX_TOKEN
+      - PLEX_MUSIC_LIBRARY
+      - NAVIDROME_URL
+      - NAVIDROME_USER
+      - NAVIDROME_PASSWORD
       - M3U_DIRECTORY=/music
       - PLEX_POLL_INTERVAL=60
       - PORT=5000
-      # Plex mounts /mnt/user/Media as /data, so music is at /data/Music
-      # Navidrome (and ListBridge) mount /mnt/user/Media/Music as /music
-      - PLEX_PATH_PREFIX=/data/Music
-      - LOCAL_PATH_PREFIX=/music
+      - PLEX_PATH_PREFIX
+      - LOCAL_PATH_PREFIX
 
 volumes:
   listbridge_data:
