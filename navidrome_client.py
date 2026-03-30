@@ -188,6 +188,22 @@ class NavidromeClient:
                 return str(s["id"])
         return None
 
+    def remove_tracks_from_playlist(self, playlist_id: str, track_ids: List[str]) -> int:
+        """Remove tracks by ID from a Navidrome playlist. Returns count removed."""
+        if not track_ids:
+            return 0
+        tracks = self.get_playlist_tracks(playlist_id)
+        id_set = set(track_ids)
+        # Collect indexes in reverse order so removals don't shift earlier positions
+        indexes = sorted(
+            [i for i, t in enumerate(tracks) if t["id"] in id_set],
+            reverse=True,
+        )
+        if not indexes:
+            return 0
+        ok = self.update_playlist(playlist_id, song_indexes_to_remove=indexes)
+        return len(indexes) if ok else 0
+
     def find_track_by_path(self, path: str) -> Optional[str]:
         """
         Find a Navidrome song ID by its relative file path.

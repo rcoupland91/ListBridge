@@ -201,6 +201,14 @@ class PlexClient:
             log.error("remove_tracks_from_playlist error: %s", exc)
             return 0
 
+    def fetch_track_by_key(self, key: str) -> Optional[Track]:
+        """Fetch a Plex Track object by its ratingKey."""
+        try:
+            return self._server().fetchItem(int(key))
+        except Exception as exc:
+            log.debug("fetch_track_by_key(%s) error: %s", key, exc)
+            return None
+
     def get_or_create_playlist(self, name: str, initial_tracks: List[Track] = None) -> Optional[Playlist]:
         try:
             pl = self._server().playlist(name)

@@ -228,6 +228,34 @@ class SyncEngine:
         # Get tracks already in Navidrome playlist
         existing_navi = {t["id"] for t in self.navi.get_playlist_tracks(navi_pl_id)}
 
+        # Detect Plex-side deletions: fetch live Plex playlist to see what's still there
+        current_plex_keys: set = set()
+        if self.plex and self.plex.connected and pl["plex_playlist_id"]:
+            plex_pl = self.plex.get_playlist(pl["plex_playlist_id"])
+            if plex_pl:
+                for t in self.plex.get_playlist_tracks(plex_pl):
+                    current_plex_keys.add(t["key"])
+
+        # Remove from Navidrome any tracks whose Plex counterpart was deleted
+        if current_plex_keys:
+            navi_ids_to_remove = [
+                st["navidrome_track_id"]
+                for st in sync_tracks
+                if st["navidrome_track_id"]
+                and st["navidrome_track_id"] in existing_navi
+                and st["plex_track_key"]
+                and st["plex_track_key"] not in current_plex_keys
+            ]
+            if navi_ids_to_remove:
+                removed = self.navi.remove_tracks_from_playlist(navi_pl_id, navi_ids_to_remove)
+                for nid in navi_ids_to_remove:
+                    for st in sync_tracks:
+                        if st["navidrome_track_id"] == nid and st["file_path"]:
+                            db.upsert_sync_track(playlist_id, st["file_path"], in_navidrome=False)
+                existing_navi -= set(navi_ids_to_remove)
+                self._log(playlist_id, "sync_info", "→navidrome",
+                          f"Removed {removed} track(s) deleted from Plex")
+
         songs_to_add = []
         for st in sync_tracks:
             if st["navidrome_track_id"] and st["navidrome_track_id"] in existing_navi:
@@ -264,6 +292,49 @@ class SyncEngine:
         self._emit("playlist_updated", {"playlist_id": playlist_id})
         return {"added": added, "skipped": skipped}
 
+    # ── Navidrome → Plex deletion sync ───────────────────────────────────────
+
+    def sync_navidrome_deletions_to_plex(self, playlist_id: int) -> dict:
+        """Remove from Plex any tracks that were deleted from the Navidrome playlist."""
+        pl = db.get_playlist(playlist_id)
+        if not pl or not pl["navidrome_playlist_id"] or not pl["plex_playlist_id"]:
+            return {"skipped": True}
+        if not self.navi or not self.navi.connected:
+            return {"skipped": True}
+        if not self.plex or not self.plex.connected:
+            return {"skipped": True}
+
+        navi_ids = {t["id"] for t in self.navi.get_playlist_tracks(pl["navidrome_playlist_id"])}
+        sync_tracks = db.get_sync_tracks(playlist_id)
+
+        plex_tracks_to_remove = []
+        affected_sync = []
+        for st in sync_tracks:
+            if (st["navidrome_track_id"]
+                    and st["in_navidrome"]
+                    and st["plex_track_key"]
+                    and st["navidrome_track_id"] not in navi_ids):
+                track = self.plex.fetch_track_by_key(st["plex_track_key"])
+                if track:
+                    plex_tracks_to_remove.append(track)
+                    affected_sync.append(st)
+
+        if not plex_tracks_to_remove:
+            return {"removed": 0}
+
+        plex_pl = self.plex.get_playlist(pl["plex_playlist_id"])
+        if not plex_pl:
+            return {"error": "Plex playlist not found"}
+
+        removed = self.plex.remove_tracks_from_playlist(plex_pl, plex_tracks_to_remove)
+        for st in affected_sync:
+            db.upsert_sync_track(playlist_id, st["file_path"], in_plex=False, in_navidrome=False)
+
+        self._log(playlist_id, "sync_done", "navi→plex",
+                  f"Removed {removed} track(s) deleted from Navidrome")
+        self._emit("playlist_updated", {"playlist_id": playlist_id})
+        return {"removed": removed}
+
     # ── Full sync ─────────────────────────────────────────────────────────────
 
     def full_sync(self, playlist_id: int) -> dict:
@@ -272,6 +343,7 @@ class SyncEngine:
         results["m3u_to_plex"] = self.sync_m3u_to_plex(playlist_id)
         results["plex_to_m3u"] = self.sync_plex_to_m3u(playlist_id)
         results["to_navidrome"] = self.sync_to_navidrome(playlist_id)
+        results["navi_to_plex_deletions"] = self.sync_navidrome_deletions_to_plex(playlist_id)
         return results
 
     # ── File-change triggered sync ────────────────────────────────────────────
@@ -315,4 +387,5 @@ class SyncEngine:
                   "Plex playlist changed, syncing back")
         self.sync_plex_to_m3u(playlist_id)
         self.sync_to_navidrome(playlist_id)
+        self.sync_navidrome_deletions_to_plex(playlist_id)
         db.update_playlist_fields(playlist_id, last_plex_sync=updated_at)
