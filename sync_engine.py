@@ -187,9 +187,7 @@ class SyncEngine:
             merged = m3u.merge_paths(existing_tracks, new_tracks)
             m3u.write(m3u_path, merged)
             current_hash = _file_hash(m3u_path)
-            db.update_playlist_fields(playlist_id,
-                                      last_m3u_hash=current_hash,
-                                      last_plex_sync=datetime.utcnow().isoformat())
+            db.update_playlist_fields(playlist_id, last_m3u_hash=current_hash)
 
         self._log(playlist_id, "sync_done", "plex→m3u",
                   f"Done: {added} new tracks written to m3u")
@@ -391,7 +389,7 @@ class SyncEngine:
 
         self._log(pl["id"], "plex_change_detected", "plex",
                   "Plex playlist changed, syncing back")
+        db.update_playlist_fields(playlist_id, last_plex_sync=updated_at)
         self.sync_plex_to_m3u(playlist_id)
         self.sync_navidrome_deletions_to_plex(playlist_id)
         self.sync_to_navidrome(playlist_id)
-        db.update_playlist_fields(playlist_id, last_plex_sync=updated_at)
