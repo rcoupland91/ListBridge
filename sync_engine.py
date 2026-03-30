@@ -86,6 +86,7 @@ class SyncEngine:
         # 3. Find new tracks to add
         tracks_to_add = []
         skipped = 0
+        not_found = 0
         for track in m3u_tracks:
             norm = m3u._normalise(track.path)
             if norm in existing_plex_paths:
@@ -105,11 +106,12 @@ class SyncEngine:
                 self._log(playlist_id, "track_matched", "m3u→plex",
                           f"Matched: {track.display_name}")
             else:
+                not_found += 1
                 db.upsert_sync_track(playlist_id, track.path,
                                      title=track.title, artist=track.artist,
                                      in_m3u=True, in_plex=False)
                 self._log(playlist_id, "track_not_found", "m3u→plex",
-                          f"Not found in Plex: {track.display_name}")
+                          f"Not found in Plex: {track.display_name} | path: {track.path}")
 
         # 4. Push to Plex
         added = 0
@@ -129,10 +131,12 @@ class SyncEngine:
                                   last_m3u_hash=current_hash,
                                   last_m3u_sync=datetime.utcnow().isoformat())
 
-        self._log(playlist_id, "sync_done", "m3u→plex",
-                  f"Done: {added} added, {skipped} already present")
+        msg = f"Done: {added} added, {skipped} already present"
+        if not_found:
+            msg += f", {not_found} not found in Plex library"
+        self._log(playlist_id, "sync_done", "m3u→plex", msg)
         self._emit("playlist_updated", {"playlist_id": playlist_id})
-        return {"added": added, "skipped": skipped}
+        return {"added": added, "skipped": skipped, "not_found": not_found}
 
     # ── Plex → M3U ────────────────────────────────────────────────────────────
 
