@@ -7,6 +7,9 @@ import os
 import threading
 from datetime import datetime
 
+import eventlet
+import eventlet.tpool
+
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, redirect, url_for, flash
 from flask_socketio import SocketIO
@@ -99,17 +102,25 @@ def _rebuild_clients():
     # Build sync engine
     _engine = SyncEngine(plex=_plex, navi=_navi, emit_fn=_emit)
 
-    # File watcher
+    # File watcher — started in background to avoid blocking on large directories
+    # (PollingObserver takes an initial snapshot synchronously before the thread starts)
     _watcher = PlaylistWatcher(on_change=_engine.on_m3u_changed)
-    if m3u_dir and os.path.isdir(m3u_dir):
-        _watcher.watch(m3u_dir)
 
-    # Also watch individual playlist directories
+    dirs_to_watch = []
+    if m3u_dir and os.path.isdir(m3u_dir):
+        dirs_to_watch.append(m3u_dir)
     for pl in db.get_playlists():
         if pl["m3u_path"]:
             d = os.path.dirname(pl["m3u_path"])
-            if d and os.path.isdir(d):
-                _watcher.watch(d)
+            if d and os.path.isdir(d) and d not in dirs_to_watch:
+                dirs_to_watch.append(d)
+
+    def _start_watcher():
+        for d in dirs_to_watch:
+            _watcher.watch(d)
+        log.info("File watcher ready, watching %d director(ies)", len(dirs_to_watch))
+
+    threading.Thread(target=_start_watcher, daemon=True, name="watcher-init").start()
 
     # Plex poller
     _poller = PlexPoller(on_poll=_engine.on_plex_poll, interval=poll_interval)
@@ -364,12 +375,26 @@ def api_discover():
         return jsonify({"error": f"Directory not found: {scan_root}"}), 400
 
     registered = {pl["m3u_path"] for pl in db.get_playlists() if pl["m3u_path"]}
+
+    max_depth = int(request.args.get("depth", 1))
+
+    def _scan():
+        results = []
+        root_depth = scan_root.rstrip(os.sep).count(os.sep)
+        for dirpath, dirs, files in os.walk(scan_root):
+            current_depth = dirpath.count(os.sep) - root_depth
+            if current_depth >= max_depth:
+                dirs.clear()  # prune — don't descend further
+                continue
+            for fname in sorted(files):
+                if fname.lower().endswith((".m3u", ".m3u8")):
+                    full = os.path.join(dirpath, fname)
+                    results.append((dirpath, fname, full))
+        return results
+
     found = []
-    for dirpath, _dirs, files in os.walk(scan_root):
-        for fname in sorted(files):
-            if fname.lower().endswith((".m3u", ".m3u8")):
-                full = os.path.join(dirpath, fname)
-                found.append({
+    for dirpath, fname, full in eventlet.tpool.execute(_scan):  # noqa: E501
+        found.append({
                     "path": full,
                     "name": os.path.splitext(fname)[0],
                     "registered": full in registered,

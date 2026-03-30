@@ -64,8 +64,9 @@ class SyncEngine:
 
         self._log(playlist_id, "sync_start", "m3u→plex", f"Syncing {pl['name']}")
 
-        # 1. Parse m3u
-        m3u_tracks = m3u.parse(pl["m3u_path"])
+        # 1. Parse m3u — resolve relative paths against the music root if configured
+        music_root = self.plex.local_path_prefix if self.plex else None
+        m3u_tracks = m3u.parse(pl["m3u_path"], relative_base=music_root)
         if not m3u_tracks:
             self._log(playlist_id, "sync_info", "m3u→plex", "M3U file is empty")
             return {"added": 0, "skipped": 0}

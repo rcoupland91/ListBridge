@@ -10,7 +10,7 @@ import time
 from typing import Callable, Optional
 
 from watchdog.events import FileSystemEventHandler, FileSystemEvent
-from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
 
 log = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class PlaylistWatcher:
             return True
 
     def _start_observer(self) -> None:
-        self._observer = Observer()
+        self._observer = PollingObserver()
         self._observer.start()
 
     def stop(self) -> None:

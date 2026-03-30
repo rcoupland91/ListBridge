@@ -27,10 +27,16 @@ class M3UTrack:
         return os.path.basename(self.path)
 
 
-def parse(m3u_path: str) -> List[M3UTrack]:
-    """Parse an .m3u / .m3u8 file and return a list of M3UTrack objects."""
+def parse(m3u_path: str, relative_base: str = None) -> List[M3UTrack]:
+    """Parse an .m3u / .m3u8 file and return a list of M3UTrack objects.
+
+    relative_base: directory to resolve relative paths against. Defaults to
+    the M3U file's own directory. Set to the music root (e.g. LOCAL_PATH_PREFIX)
+    when M3U files use paths relative to the library root rather than to themselves.
+    """
     tracks: List[M3UTrack] = []
     m3u_dir = os.path.dirname(os.path.abspath(m3u_path))
+    resolve_base = os.path.abspath(relative_base) if relative_base else m3u_dir
 
     pending_title: Optional[str] = None
     pending_artist: Optional[str] = None
@@ -77,7 +83,14 @@ def parse(m3u_path: str) -> List[M3UTrack]:
         # It's a file path or URL
         path = line
         if not path.startswith(("http://", "https://", "ftp://")) and not os.path.isabs(path):
-            path = os.path.normpath(os.path.join(m3u_dir, path))
+            resolved = os.path.normpath(os.path.join(resolve_base, path))
+            # Fallback: if resolve_base differs from m3u_dir and file doesn't exist there,
+            # try resolving relative to the M3U file's own directory
+            if resolve_base != m3u_dir and not os.path.exists(resolved):
+                fallback = os.path.normpath(os.path.join(m3u_dir, path))
+                if os.path.exists(fallback):
+                    resolved = fallback
+            path = resolved
 
         tracks.append(
             M3UTrack(
