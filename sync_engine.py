@@ -237,6 +237,11 @@ class SyncEngine:
             t["path"].replace("\\", "/").lstrip("/"): t["id"]
             for t in navi_playlist_tracks if t.get("path")
         }
+        # Log a sample path from each side so we can verify format compatibility
+        sample_navi = next(iter(navi_path_map), None)
+        sample_sync = next((st["file_path"] for st in sync_tracks if st["file_path"]), None)
+        log.info("Reconcile sample — navi_path=%r  sync_file_path=%r", sample_navi, sample_sync)
+
         reconciled = 0
         for st in sync_tracks:
             if st["navidrome_track_id"] or not st["file_path"]:
@@ -312,7 +317,8 @@ class SyncEngine:
                           f"Matched: {st['title'] or st['file_path']}")
             elif not navi_id:
                 self._log(playlist_id, "track_not_found", "→navidrome",
-                          f"Not found: {st['title'] or st['file_path']}")
+                          f"Not found: {st['title'] or st['file_path']}"
+                          f" | file_path={st['file_path']!r} artist={st['artist']!r}")
 
         if songs_to_add:
             # Batch update
