@@ -232,27 +232,38 @@ class SyncEngine:
         existing_navi = {t["id"] for t in navi_playlist_tracks}
 
         # Reconcile: stamp any sync_tracks that are already in Navidrome but lack an ID.
-        # Navidrome paths are relative to the music root; our file_paths are absolute.
+        # Build both a path map and a title map — getPlaylist may not return paths.
         navi_path_map = {
             t["path"].replace("\\", "/").lstrip("/"): t["id"]
             for t in navi_playlist_tracks if t.get("path")
         }
-        # Log a sample path from each side so we can verify format compatibility
-        sample_navi = next(iter(navi_path_map), None)
-        sample_sync = next((st["file_path"] for st in sync_tracks if st["file_path"]), None)
-        log.info("Reconcile sample — navi_path=%r  sync_file_path=%r", sample_navi, sample_sync)
+        navi_title_map = {
+            t["title"].lower(): t["id"]
+            for t in navi_playlist_tracks if t.get("title")
+        }
+        log.info(
+            "Reconcile: playlist has %d tracks, %d with paths, %d with titles",
+            len(navi_playlist_tracks), len(navi_path_map), len(navi_title_map),
+        )
 
         reconciled = 0
         for st in sync_tracks:
             if st["navidrome_track_id"] or not st["file_path"]:
                 continue
+            navi_id = None
+            # 1. Path-based match (most precise)
             norm = st["file_path"].replace("\\", "/")
-            for navi_rel, navi_id in navi_path_map.items():
+            for navi_rel, pid in navi_path_map.items():
                 if norm.endswith(navi_rel):
-                    db.upsert_sync_track(playlist_id, st["file_path"],
-                                         navidrome_track_id=navi_id, in_navidrome=True)
-                    reconciled += 1
+                    navi_id = pid
                     break
+            # 2. Title-based match fallback (for when getPlaylist omits paths)
+            if not navi_id and st["title"]:
+                navi_id = navi_title_map.get(st["title"].lower())
+            if navi_id:
+                db.upsert_sync_track(playlist_id, st["file_path"],
+                                     navidrome_track_id=navi_id, in_navidrome=True)
+                reconciled += 1
         if reconciled:
             self._log(playlist_id, "sync_info", "→navidrome",
                       f"Reconciled {reconciled} existing Navidrome track IDs from playlist")

@@ -211,11 +211,18 @@ class NavidromeClient:
     def find_track_by_path(self, path: str, artist: str = None) -> Optional[str]:
         """
         Find a Navidrome song ID by matching its file path.
-        Searches by artist name when available (returns all their tracks, then
-        matches by path), falling back to the filename stem.
         Navidrome returns `path` in results relative to the music folder root.
+
+        Strategy (in order):
+        1. Search by parent directory name — most reliable since Navidrome indexes
+           by directory structure, and the directory is usually the real artist name.
+        2. Search by artist name — if provided and not a generic value.
+        3. Fallback to filename stem search.
         """
         import re
+
+        _GENERIC_ARTISTS = {"various artists", "unknown artist", "unknown", ""}
+
         norm = path.replace("\\", "/")
 
         def _match_path(songs):
@@ -225,26 +232,30 @@ class NavidromeClient:
                     return str(s["id"])
             return None
 
-        # Prefer artist-based search: stable query, broader result set
-        if artist:
-            data = self._get("search3", query=artist,
-                             songCount=500, artistCount=0, albumCount=0)
-            if data:
-                songs = data.get("searchResult3", {}).get("song", [])
-                if isinstance(songs, dict):
-                    songs = [songs]
-                result = _match_path(songs)
+        def _search(query, count=200):
+            data = self._get("search3", query=query,
+                             songCount=count, artistCount=0, albumCount=0)
+            if not data:
+                return []
+            songs = data.get("searchResult3", {}).get("song", [])
+            return songs if isinstance(songs, list) else [songs]
+
+        # 1. Parent directory name (real on-disk artist as Navidrome sees it)
+        parts = norm.rsplit("/", 2)
+        if len(parts) >= 2:
+            parent_dir = parts[-2]
+            if parent_dir.lower() not in _GENERIC_ARTISTS:
+                result = _match_path(_search(parent_dir))
                 if result:
                     return result
 
-        # Fallback: search by filename stem (strip leading track numbers)
+        # 2. Provided artist name (skip generic values like "Various Artists")
+        if artist and artist.lower() not in _GENERIC_ARTISTS:
+            result = _match_path(_search(artist, count=500))
+            if result:
+                return result
+
+        # 3. Filename stem (strip leading track numbers)
         stem = os.path.splitext(os.path.basename(norm))[0]
         stem = re.sub(r"^\d+[\s\.\-]+", "", stem).strip()
-        data = self._get("search3", query=stem,
-                         songCount=100, artistCount=0, albumCount=0)
-        if not data:
-            return None
-        songs = data.get("searchResult3", {}).get("song", [])
-        if isinstance(songs, dict):
-            songs = [songs]
-        return _match_path(songs)
+        return _match_path(_search(stem, count=100))
