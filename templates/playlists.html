@@ -1,0 +1,429 @@
+{% extends "base.html" %}
+{% block title %}Playlists — ListBridge{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-collection-play"></i> Playlists</h4>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#discoverModal">
+      <i class="bi bi-search"></i> Discover M3Us
+    </button>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
+      <i class="bi bi-plus-lg"></i> Add Playlist
+    </button>
+  </div>
+</div>
+
+{% if playlists %}
+<div class="row g-3" id="playlist-cards">
+  {% for pl in playlists %}
+  <div class="col-lg-6 col-xl-4" id="card-{{ pl.id }}">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong class="text-truncate" title="{{ pl.name }}">{{ pl.name }}</strong>
+        <div class="d-flex gap-1 flex-shrink-0">
+          <button class="btn btn-xs btn-outline-success py-0 px-1"
+                  title="Full sync now"
+                  onclick="syncPlaylist({{ pl.id }}, 'full', this)">
+            <i class="bi bi-arrow-repeat"></i>
+          </button>
+          <button class="btn btn-xs btn-outline-secondary py-0 px-1"
+                  title="Edit"
+                  onclick="openEdit({{ pl | tojson | e }})">
+            <i class="bi bi-pencil"></i>
+          </button>
+          <form method="post" action="{{ url_for('playlist_delete', playlist_id=pl.id) }}"
+                onsubmit="return confirm('Delete {{ pl.name }}?')">
+            <button type="submit" class="btn btn-xs btn-outline-danger py-0 px-1" title="Remove">
+              <i class="bi bi-trash"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+      <div class="card-body small">
+        <dl class="row mb-0 g-1">
+          <dt class="col-5 text-muted">M3U file</dt>
+          <dd class="col-7 text-truncate mb-0" title="{{ pl.m3u_path }}">
+            {{ pl.m3u_path or '—' }}
+          </dd>
+          <dt class="col-5 text-muted">Plex playlist</dt>
+          <dd class="col-7 mb-0">
+            {% if pl.plex_playlist_id %}
+              <span class="badge bg-success">Linked ({{ pl.plex_playlist_id }})</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </dd>
+          <dt class="col-5 text-muted">Navidrome</dt>
+          <dd class="col-7 mb-0">
+            {% if pl.navidrome_playlist_id %}
+              <span class="badge bg-success">Linked</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </dd>
+          <dt class="col-5 text-muted">Last sync</dt>
+          <dd class="col-7 mb-0 text-muted">{{ (pl.last_m3u_sync or pl.last_plex_sync or '—')[:19] }}</dd>
+        </dl>
+
+        <div class="d-flex gap-1 flex-wrap mt-2">
+          {% if pl.sync_m3u_to_plex %}
+            <span class="badge bg-primary"><i class="bi bi-arrow-right"></i> M3U→Plex</span>
+          {% endif %}
+          {% if pl.sync_plex_to_m3u %}
+            <span class="badge bg-warning text-dark"><i class="bi bi-arrow-left"></i> Plex→M3U</span>
+          {% endif %}
+          {% if pl.sync_to_navidrome %}
+            <span class="badge bg-info text-dark"><i class="bi bi-arrow-right"></i> →Navidrome</span>
+          {% endif %}
+        </div>
+
+        <!-- Per-direction sync buttons -->
+        <div class="d-flex gap-1 mt-2 flex-wrap">
+          <button class="btn btn-xs btn-outline-primary py-0 px-1"
+                  onclick="syncPlaylist({{ pl.id }}, 'm3u_to_plex', this)">M3U→Plex</button>
+          <button class="btn btn-xs btn-outline-warning py-0 px-1"
+                  onclick="syncPlaylist({{ pl.id }}, 'plex_to_m3u', this)">Plex→M3U</button>
+          <button class="btn btn-xs btn-outline-info py-0 px-1"
+                  onclick="syncPlaylist({{ pl.id }}, 'to_navidrome', this)">→Navidrome</button>
+          <button class="btn btn-xs btn-outline-secondary py-0 px-1"
+                  onclick="viewTracks({{ pl.id }}, '{{ pl.name | e }}')">Tracks</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-collection-play fs-1 d-block mb-2"></i>
+    No playlists configured yet.<br>
+    Click <strong>Add Playlist</strong> to get started.
+  </div>
+</div>
+{% endif %}
+
+
+<!-- ── Add Playlist Modal ── -->
+<div class="modal fade" id="addModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form class="modal-content" method="post" action="{{ url_for('playlist_add') }}">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Playlist</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Playlist name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" name="name" required placeholder="My Playlist">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">M3U file path</label>
+          <input type="text" class="form-control" name="m3u_path" placeholder="/mnt/music/playlists/my-playlist.m3u">
+          <div class="form-text">Absolute path to the .m3u file on this machine.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Link to Plex playlist</label>
+          <select class="form-select" name="plex_playlist_id">
+            <option value="">— Create new / auto-detect —</option>
+            {% for pp in plex_playlists %}
+            <option value="{{ pp.id }}">{{ pp.title }} ({{ pp.track_count }} tracks)</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Link to Navidrome playlist</label>
+          <select class="form-select" name="navidrome_playlist_id">
+            <option value="">— Create new / auto-detect —</option>
+            {% for np in navi_playlists %}
+            <option value="{{ np.id }}">{{ np.name }} ({{ np.song_count }} tracks)</option>
+            {% endfor %}
+          </select>
+        </div>
+        <hr>
+        <p class="small text-muted mb-2">Sync directions</p>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" name="sync_m3u_to_plex" id="add_m2p" checked>
+          <label class="form-check-label" for="add_m2p">M3U → Plex (push m3u changes to Plex)</label>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" name="sync_plex_to_m3u" id="add_p2m" checked>
+          <label class="form-check-label" for="add_p2m">Plex → M3U (pull Plex changes back to m3u)</label>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" name="sync_to_navidrome" id="add_navi" checked>
+          <label class="form-check-label" for="add_navi">→ Navidrome (sync to Navidrome)</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+<!-- ── Edit Modal ── -->
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form class="modal-content" method="post" id="editForm">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Playlist</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Name</label>
+          <input type="text" class="form-control" name="name" id="edit_name" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">M3U file path</label>
+          <input type="text" class="form-control" name="m3u_path" id="edit_m3u_path">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Plex playlist ID</label>
+          <input type="text" class="form-control" name="plex_playlist_id" id="edit_plex_id">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Navidrome playlist ID</label>
+          <input type="text" class="form-control" name="navidrome_playlist_id" id="edit_navi_id">
+        </div>
+        <hr>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" name="sync_m3u_to_plex" id="edit_m2p">
+          <label class="form-check-label" for="edit_m2p">M3U → Plex</label>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" name="sync_plex_to_m3u" id="edit_p2m">
+          <label class="form-check-label" for="edit_p2m">Plex → M3U</label>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" name="sync_to_navidrome" id="edit_navi">
+          <label class="form-check-label" for="edit_navi">→ Navidrome</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+<!-- ── Tracks Modal ── -->
+<div class="modal fade modal-lg" id="tracksModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="tracksModalTitle">Tracks</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0" style="max-height:60vh;overflow-y:auto;">
+        <table class="table table-dark table-sm small mb-0">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Artist</th>
+              <th class="text-center">M3U</th>
+              <th class="text-center">Plex</th>
+              <th class="text-center">Navidrome</th>
+            </tr>
+          </thead>
+          <tbody id="tracks-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── Discover Modal ── -->
+<div class="modal fade modal-xl" id="discoverModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-search"></i> Discover M3U Files</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex gap-2 mb-3 align-items-center">
+          <input type="text" id="discover-path" class="form-control"
+                 placeholder="Directory to scan (leave blank to use configured M3U directory)">
+          <button class="btn btn-outline-primary text-nowrap" onclick="runDiscover()">
+            <i class="bi bi-search"></i> Scan
+          </button>
+        </div>
+        <div id="discover-results" class="d-none">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span id="discover-summary" class="small text-muted"></span>
+            <div class="d-flex gap-2">
+              <button class="btn btn-xs btn-outline-secondary" onclick="selectAllDiscover(true)">Select all new</button>
+              <button class="btn btn-xs btn-outline-secondary" onclick="selectAllDiscover(false)">Deselect all</button>
+              <button class="btn btn-sm btn-primary" onclick="importSelected()">
+                <i class="bi bi-download"></i> Import Selected
+              </button>
+            </div>
+          </div>
+          <div style="max-height:55vh;overflow-y:auto;">
+            <table class="table table-dark table-sm table-hover small mb-0">
+              <thead>
+                <tr>
+                  <th style="width:32px"></th>
+                  <th>Playlist name</th>
+                  <th>Path</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="discover-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="discover-empty" class="text-center text-muted py-4 d-none">
+          <i class="bi bi-folder2-open fs-2 d-block mb-2"></i>
+          No .m3u or .m3u8 files found in that directory.
+        </div>
+        <div id="discover-loading" class="text-center py-4 d-none">
+          <span class="spinner-border text-primary"></span>
+          <div class="mt-2 text-muted small">Scanning…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function syncPlaylist(id, direction, btn) {
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+  fetch(`/api/sync/${id}?direction=${direction}`, {method: 'POST'})
+    .then(r => r.json())
+    .then(d => {
+      console.log('sync result', d);
+      if (btn) { btn.disabled = false; btn.innerHTML = direction === 'full' ? '<i class="bi bi-arrow-repeat"></i>' : btn.textContent; }
+    })
+    .catch(() => { if (btn) btn.disabled = false; });
+}
+
+function openEdit(pl) {
+  document.getElementById('editForm').action = `/playlists/${pl.id}/edit`;
+  document.getElementById('edit_name').value = pl.name || '';
+  document.getElementById('edit_m3u_path').value = pl.m3u_path || '';
+  document.getElementById('edit_plex_id').value = pl.plex_playlist_id || '';
+  document.getElementById('edit_navi_id').value = pl.navidrome_playlist_id || '';
+  document.getElementById('edit_m2p').checked = !!pl.sync_m3u_to_plex;
+  document.getElementById('edit_p2m').checked = !!pl.sync_plex_to_m3u;
+  document.getElementById('edit_navi').checked = !!pl.sync_to_navidrome;
+  new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+
+function viewTracks(id, name) {
+  document.getElementById('tracksModalTitle').textContent = `Tracks — ${name}`;
+  const tbody = document.getElementById('tracks-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3"><span class="spinner-border spinner-border-sm"></span> Loading…</td></tr>';
+  new bootstrap.Modal(document.getElementById('tracksModal')).show();
+  fetch(`/api/playlists/${id}/tracks`)
+    .then(r => r.json())
+    .then(tracks => {
+      if (!tracks.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No tracks tracked yet. Run a sync first.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = tracks.map(t => `
+        <tr>
+          <td class="text-truncate" style="max-width:200px" title="${t.file_path || ''}">${t.title || t.file_path || '—'}</td>
+          <td>${t.artist || '—'}</td>
+          <td class="text-center">${t.in_m3u ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle text-secondary"></i>'}</td>
+          <td class="text-center">${t.in_plex ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle text-secondary"></i>'}</td>
+          <td class="text-center">${t.in_navidrome ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle text-secondary"></i>'}</td>
+        </tr>
+      `).join('');
+    });
+}
+
+// ── Discover M3Us ─────────────────────────────────────────────────────────────
+
+let _discoverData = [];
+
+function runDiscover() {
+  const path = document.getElementById('discover-path').value.trim();
+  const url = '/api/discover' + (path ? `?path=${encodeURIComponent(path)}` : '');
+
+  document.getElementById('discover-results').classList.add('d-none');
+  document.getElementById('discover-empty').classList.add('d-none');
+  document.getElementById('discover-loading').classList.remove('d-none');
+
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('discover-loading').classList.add('d-none');
+      if (data.error) { alert(data.error); return; }
+      _discoverData = data;
+
+      if (!data.length) {
+        document.getElementById('discover-empty').classList.remove('d-none');
+        return;
+      }
+
+      const newCount = data.filter(f => !f.registered).length;
+      document.getElementById('discover-summary').textContent =
+        `Found ${data.length} file${data.length !== 1 ? 's' : ''} — ${newCount} not yet registered`;
+
+      const tbody = document.getElementById('discover-tbody');
+      tbody.innerHTML = data.map((f, i) => `
+        <tr class="${f.registered ? 'opacity-50' : ''}">
+          <td>
+            <input type="checkbox" class="form-check-input discover-check"
+                   data-idx="${i}" ${!f.registered ? 'checked' : ''} ${f.registered ? 'disabled' : ''}>
+          </td>
+          <td>${escHtml(f.name)}</td>
+          <td class="text-muted text-truncate" style="max-width:320px" title="${escHtml(f.path)}">${escHtml(f.rel)}</td>
+          <td>
+            ${f.registered
+              ? '<span class="badge bg-secondary">Already registered</span>'
+              : '<span class="badge bg-success">New</span>'}
+          </td>
+        </tr>
+      `).join('');
+
+      document.getElementById('discover-results').classList.remove('d-none');
+    })
+    .catch(e => {
+      document.getElementById('discover-loading').classList.add('d-none');
+      alert('Scan failed: ' + e);
+    });
+}
+
+function selectAllDiscover(state) {
+  document.querySelectorAll('.discover-check:not(:disabled)').forEach(cb => cb.checked = state);
+}
+
+function importSelected() {
+  const checked = [...document.querySelectorAll('.discover-check:checked')];
+  if (!checked.length) { alert('No files selected.'); return; }
+
+  const paths = checked.map(cb => _discoverData[parseInt(cb.dataset.idx)].path);
+
+  fetch('/api/discover/import', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({paths}),
+  })
+  .then(r => r.json())
+  .then(result => {
+    const added = result.added?.length || 0;
+    alert(`Imported ${added} playlist${added !== 1 ? 's' : ''}. Reload to see them.`);
+    if (added > 0) location.reload();
+  });
+}
+
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

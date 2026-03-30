@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — ListBridge{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-sm-4">
+    <div class="card text-center h-100">
+      <div class="card-body">
+        <div class="display-4 text-primary fw-bold">{{ playlists|length }}</div>
+        <div class="text-muted small">Watched Playlists</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card text-center h-100">
+      <div class="card-body">
+        <div class="display-4 {% if plex_ok %}text-success{% else %}text-danger{% endif %} fw-bold">
+          <i class="bi bi-server fs-1"></i>
+        </div>
+        <div class="text-muted small">Plex {% if plex_ok %}Connected{% else %}Disconnected{% endif %}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card text-center h-100">
+      <div class="card-body">
+        <div class="display-4 {% if navi_ok %}text-success{% else %}text-secondary{% endif %} fw-bold">
+          <i class="bi bi-music-player fs-1"></i>
+        </div>
+        <div class="text-muted small">Navidrome {% if navi_ok %}Connected{% else %}Disconnected{% endif %}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Playlist overview -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-7">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-collection-play"></i> Playlists</span>
+        <div>
+          <button class="btn btn-sm btn-outline-primary" onclick="syncAll()">
+            <i class="bi bi-arrow-repeat"></i> Sync All
+          </button>
+          <a href="{{ url_for('playlists') }}" class="btn btn-sm btn-outline-secondary ms-1">Manage</a>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        {% if playlists %}
+        <table class="table table-dark table-hover mb-0 small">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>M3U</th>
+              <th>Plex</th>
+              <th>Navidrome</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for pl in playlists %}
+            <tr id="pl-row-{{ pl.id }}">
+              <td class="align-middle">{{ pl.name }}</td>
+              <td class="align-middle">
+                {% if pl.m3u_path %}
+                  <span class="badge bg-success"><i class="bi bi-file-earmark-music"></i> Linked</span>
+                {% else %}
+                  <span class="badge bg-secondary">None</span>
+                {% endif %}
+              </td>
+              <td class="align-middle">
+                {% if pl.plex_playlist_id %}
+                  <span class="badge bg-success">Linked</span>
+                {% else %}
+                  <span class="badge bg-secondary">None</span>
+                {% endif %}
+              </td>
+              <td class="align-middle">
+                {% if pl.navidrome_playlist_id %}
+                  <span class="badge bg-success">Linked</span>
+                {% else %}
+                  <span class="badge bg-secondary">None</span>
+                {% endif %}
+              </td>
+              <td class="align-middle text-end">
+                <button class="btn btn-xs btn-outline-primary py-0 px-1"
+                        onclick="syncPlaylist({{ pl.id }})"
+                        title="Sync now">
+                  <i class="bi bi-arrow-repeat"></i>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-center text-muted py-4">
+          No playlists yet. <a href="{{ url_for('playlists') }}">Add one</a>.
+        </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity log -->
+  <div class="col-lg-5">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-activity"></i> Activity Log</span>
+        <small class="text-muted">Live</small>
+      </div>
+      <div class="card-body p-0" style="max-height:420px;overflow-y:auto;" id="log-container">
+        <div id="log-entries">
+          {% for l in logs %}
+          <div class="log-entry px-3 py-1 border-bottom border-secondary small d-flex gap-2 align-items-start">
+            <span class="text-muted text-nowrap" style="font-size:0.75rem">{{ l.created_at[:19] if l.created_at else '' }}</span>
+            <span class="badge {{ l.event_type | log_badge_class }} text-nowrap">{{ l.event_type }}</span>
+            <span class="text-truncate">
+              {% if l.playlist_name %}<strong>{{ l.playlist_name }}</strong>: {% endif %}
+              {{ l.message or '' }}
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Spinner overlay for sync operations -->
+<div id="sync-spinner" class="d-none position-fixed top-50 start-50 translate-middle" style="z-index:9999">
+  <div class="spinner-border text-primary" role="status">
+    <span class="visually-hidden">Syncing…</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function syncPlaylist(id) {
+  document.getElementById('sync-spinner').classList.remove('d-none');
+  fetch(`/api/sync/${id}`, {method: 'POST'})
+    .then(r => r.json())
+    .then(d => { console.log(d); })
+    .finally(() => document.getElementById('sync-spinner').classList.add('d-none'));
+}
+
+function syncAll() {
+  document.getElementById('sync-spinner').classList.remove('d-none');
+  fetch('/api/sync/all', {method: 'POST'})
+    .then(r => r.json())
+    .then(d => console.log(d))
+    .finally(() => document.getElementById('sync-spinner').classList.add('d-none'));
+}
+</script>
+{% endblock %}

@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  listbridge:
+    build: .
+    container_name: listbridge
+    restart: unless-stopped
+    ports:
+      - "5001:5000"
+    volumes:
+      # Mount music library at the same path Navidrome uses so m3u paths resolve correctly
+      - /mnt/user/Media/Music:/music
+      # Persist the SQLite database
+      - listbridge_data:/app/data
+    environment:
+      - SECRET_KEY=change-me-please
+      - PLEX_URL
+      - PLEX_TOKEN
+      - PLEX_MUSIC_LIBRARY
+      - NAVIDROME_URL
+      - NAVIDROME_USER
+      - NAVIDROME_PASSWORD
+      - M3U_DIRECTORY=/music
+      - PLEX_POLL_INTERVAL=60
+      - PORT=5000
+      - PLEX_PATH_PREFIX
+      - LOCAL_PATH_PREFIX
+
+volumes:
+  listbridge_data:
