@@ -227,8 +227,32 @@ class SyncEngine:
         if not navi_pl_id:
             return {"error": "Could not get/create Navidrome playlist"}
 
-        # Get tracks already in Navidrome playlist
-        existing_navi = {t["id"] for t in self.navi.get_playlist_tracks(navi_pl_id)}
+        # Get tracks already in Navidrome playlist and build a path→id map
+        navi_playlist_tracks = self.navi.get_playlist_tracks(navi_pl_id)
+        existing_navi = {t["id"] for t in navi_playlist_tracks}
+
+        # Reconcile: stamp any sync_tracks that are already in Navidrome but lack an ID.
+        # Navidrome paths are relative to the music root; our file_paths are absolute.
+        navi_path_map = {
+            t["path"].replace("\\", "/").lstrip("/"): t["id"]
+            for t in navi_playlist_tracks if t.get("path")
+        }
+        reconciled = 0
+        for st in sync_tracks:
+            if st["navidrome_track_id"] or not st["file_path"]:
+                continue
+            norm = st["file_path"].replace("\\", "/")
+            for navi_rel, navi_id in navi_path_map.items():
+                if norm.endswith(navi_rel):
+                    db.upsert_sync_track(playlist_id, st["file_path"],
+                                         navidrome_track_id=navi_id, in_navidrome=True)
+                    reconciled += 1
+                    break
+        if reconciled:
+            self._log(playlist_id, "sync_info", "→navidrome",
+                      f"Reconciled {reconciled} existing Navidrome track IDs from playlist")
+            # Reload sync_tracks now that IDs are stamped
+            sync_tracks = db.get_sync_tracks(playlist_id)
 
         # Detect Plex-side deletions: fetch live Plex playlist to see what's still there
         current_plex_keys: set = set()
