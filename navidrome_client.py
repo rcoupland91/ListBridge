@@ -186,9 +186,12 @@ class NavidromeClient:
         for s in songs:
             if s.get("title", "").lower() == title_l:
                 return str(s["id"])
-        # Partial title match
+        # Partial match: plex title contains navi title, or navi title contains plex title.
+        # Covers decorated titles like "Good Grief - ARTE Live..." vs clean "Good Grief",
+        # and "I Need You (club mix)" vs "I Need You".
         for s in songs:
-            if title_l in s.get("title", "").lower():
+            s_title = s.get("title", "").lower()
+            if s_title and (title_l in s_title or s_title in title_l):
                 return str(s["id"])
         return None
 
