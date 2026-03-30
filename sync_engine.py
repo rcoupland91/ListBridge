@@ -274,7 +274,7 @@ class SyncEngine:
             if not navi_id:
                 # Try to find in Navidrome
                 if st["file_path"]:
-                    navi_id = self.navi.find_track_by_path(st["file_path"])
+                    navi_id = self.navi.find_track_by_path(st["file_path"], st["artist"])
                 if not navi_id and st["title"]:
                     navi_id = self.navi.search_track(st["title"], st["artist"] or "")
                 if navi_id:

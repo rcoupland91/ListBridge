@@ -169,7 +169,7 @@ class NavidromeClient:
     def search_track(self, title: str, artist: str = "") -> Optional[str]:
         """Search for a track by title (and optionally artist). Returns song ID."""
         query = f"{artist} {title}".strip() if artist else title
-        data = self._get("search3", query=query, songCount=20, artistCount=0, albumCount=0)
+        data = self._get("search3", query=query, songCount=50, artistCount=0, albumCount=0)
         if not data:
             return None
         songs = data.get("searchResult3", {}).get("song", [])
@@ -177,12 +177,16 @@ class NavidromeClient:
             songs = [songs]
         title_l = title.lower()
         artist_l = artist.lower() if artist else ""
-        # Exact match first
+        # Exact title + artist match
         for s in songs:
             if s.get("title", "").lower() == title_l:
                 if not artist_l or s.get("artist", "").lower() == artist_l:
                     return str(s["id"])
-        # Partial match
+        # Exact title match, any artist (handles artist tag differences)
+        for s in songs:
+            if s.get("title", "").lower() == title_l:
+                return str(s["id"])
+        # Partial title match
         for s in songs:
             if title_l in s.get("title", "").lower():
                 return str(s["id"])
@@ -204,27 +208,43 @@ class NavidromeClient:
         ok = self.update_playlist(playlist_id, song_indexes_to_remove=indexes)
         return len(indexes) if ok else 0
 
-    def find_track_by_path(self, path: str) -> Optional[str]:
+    def find_track_by_path(self, path: str, artist: str = None) -> Optional[str]:
         """
-        Find a Navidrome song ID by its relative file path.
-        Navidrome returns `path` in search results relative to the music folder.
+        Find a Navidrome song ID by matching its file path.
+        Searches by artist name when available (returns all their tracks, then
+        matches by path), falling back to the filename stem.
+        Navidrome returns `path` in results relative to the music folder root.
         """
-        # Strip common prefixes to get a relative-looking path
+        import re
         norm = path.replace("\\", "/")
-        data = self._get(
-            "search3",
-            query=os.path.splitext(os.path.basename(norm))[0],
-            songCount=50,
-            artistCount=0,
-            albumCount=0,
-        )
+
+        def _match_path(songs):
+            for s in songs:
+                song_path = s.get("path", "").replace("\\", "/")
+                if song_path and norm.endswith(song_path):
+                    return str(s["id"])
+            return None
+
+        # Prefer artist-based search: stable query, broader result set
+        if artist:
+            data = self._get("search3", query=artist,
+                             songCount=500, artistCount=0, albumCount=0)
+            if data:
+                songs = data.get("searchResult3", {}).get("song", [])
+                if isinstance(songs, dict):
+                    songs = [songs]
+                result = _match_path(songs)
+                if result:
+                    return result
+
+        # Fallback: search by filename stem (strip leading track numbers)
+        stem = os.path.splitext(os.path.basename(norm))[0]
+        stem = re.sub(r"^\d+[\s\.\-]+", "", stem).strip()
+        data = self._get("search3", query=stem,
+                         songCount=100, artistCount=0, albumCount=0)
         if not data:
             return None
         songs = data.get("searchResult3", {}).get("song", [])
         if isinstance(songs, dict):
             songs = [songs]
-        for s in songs:
-            song_path = s.get("path", "").replace("\\", "/")
-            if song_path and (song_path in norm or norm.endswith(song_path)):
-                return str(s["id"])
-        return None
+        return _match_path(songs)
