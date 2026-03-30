@@ -230,14 +230,16 @@ class SyncEngine:
 
         # Detect Plex-side deletions: fetch live Plex playlist to see what's still there
         current_plex_keys: set = set()
+        plex_queried = False
         if self.plex and self.plex.connected and pl["plex_playlist_id"]:
             plex_pl = self.plex.get_playlist(pl["plex_playlist_id"])
             if plex_pl:
+                plex_queried = True
                 for t in self.plex.get_playlist_tracks(plex_pl):
                     current_plex_keys.add(t["key"])
 
         # Remove from Navidrome any tracks whose Plex counterpart was deleted
-        if current_plex_keys:
+        if plex_queried:
             navi_ids_to_remove = [
                 st["navidrome_track_id"]
                 for st in sync_tracks
@@ -258,6 +260,10 @@ class SyncEngine:
 
         songs_to_add = []
         for st in sync_tracks:
+            # Only sync tracks confirmed to be in Plex
+            if not st["in_plex"]:
+                continue
+
             if st["navidrome_track_id"] and st["navidrome_track_id"] in existing_navi:
                 skipped += 1
                 continue
@@ -342,8 +348,8 @@ class SyncEngine:
         results = {}
         results["m3u_to_plex"] = self.sync_m3u_to_plex(playlist_id)
         results["plex_to_m3u"] = self.sync_plex_to_m3u(playlist_id)
-        results["to_navidrome"] = self.sync_to_navidrome(playlist_id)
         results["navi_to_plex_deletions"] = self.sync_navidrome_deletions_to_plex(playlist_id)
+        results["to_navidrome"] = self.sync_to_navidrome(playlist_id)
         return results
 
     # ── File-change triggered sync ────────────────────────────────────────────
@@ -386,6 +392,6 @@ class SyncEngine:
         self._log(pl["id"], "plex_change_detected", "plex",
                   "Plex playlist changed, syncing back")
         self.sync_plex_to_m3u(playlist_id)
-        self.sync_to_navidrome(playlist_id)
         self.sync_navidrome_deletions_to_plex(playlist_id)
+        self.sync_to_navidrome(playlist_id)
         db.update_playlist_fields(playlist_id, last_plex_sync=updated_at)
